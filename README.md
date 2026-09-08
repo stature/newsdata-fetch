@@ -137,6 +137,11 @@ TLD list if `.co.uk`-style sources start showing up in practice.
 
 Before a row is ever written, `filter_reason()` drops:
 
+- **Explicit source blocklist** (`blocked_sources` in `config.toml`) — add
+  any `source_id`, `source_name` (as it appears in the CSV), or bare domain
+  to drop everything from it, no code changes needed. Matched
+  case-insensitively against all three independently. Currently blocks
+  `prsync` (press-release market-report spam).
 - **Investor/stock-comparison syndication** — an explicit publisher/domain
   blocklist (MarketBeat network, Zacks, Motley Fool, Benzinga, etc.) plus a
   securities-language title regex (`shares of`, `NASDAQ:`, `price target`,
@@ -146,12 +151,14 @@ Before a row is ever written, `filter_reason()` drops:
   gardening, tourism, "forest bathing" wellness content, etc.
 - **Anything with no genuine forestry/wood-industry term** anywhere in
   title+description (`require_industry_anchor`) — the broadest rule; catches
-  whatever the other three miss.
+  whatever the others miss.
 
 Rejected articles never touch the CSV. A per-keyword `filtered` count and an
-end-of-run reason breakdown print to the log. Toggle the whole thing off with
-`content_filter_enabled = false`, or just the broad anchor rule with
-`require_industry_anchor = false`, in `config.toml`.
+end-of-run reason breakdown print to the log (`blocked_source` is its own
+reason code, kept separate from `financial_reporting` for a clearer audit
+trail). Toggle the whole thing off with `content_filter_enabled = false`, or
+just the broad anchor rule with `require_industry_anchor = false`, in
+`config.toml`.
 
 **`retrofilter.py`** re-applies the current filter to already-collected
 weekly CSVs — useful after tuning a rule, since `fetch_news.py` only filters
