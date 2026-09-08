@@ -11,7 +11,7 @@
 # found in initial testing. Try it on more if you keep seeing noise from a
 # given keyword.
 
-#Forestproud
+Forestproud
 advanced biofuel
 Advancing Mass Timber
 Arnie Didier
@@ -29,7 +29,6 @@ title:forest health
 forest landowner
 forest management
 forest products
-title:forest
 forestry consultant
 title:forestry
 glulaminated timber
@@ -52,7 +51,9 @@ mass timber modular
 mass timber warehouse
 title:mass timber
 Mass Timber+
-mill closure
+sawmill closure
+lumber mill closure
+pulp mill closure
 modular construction
 modular industrialized construction
 modular mass timber
@@ -80,7 +81,7 @@ title:timber
 U.S. Forest Service
 US Endowment for Forestry and Communities
 volumetric modular construction
-West Fraser Timber
+West Fraser
 wildland urban interface
 women in timber
 wood chips
@@ -92,3 +93,10 @@ wood utilization
 wood waste
 WoodWorks
 woody biomass
+
+# added 2026-09-08 - certification/policy terms not previously covered
+FSC certification
+Sustainable Forestry Initiative
+FSC chain of custody
+biomass power plant
+carbon offset market
