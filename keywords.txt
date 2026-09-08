@@ -44,7 +44,6 @@ logger sports
 title:loggers
 logging industry
 logging truck
-title:logging
 lumber market
 mass plywood
 mass timber conference

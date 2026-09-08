@@ -150,12 +150,31 @@ Before a row is ever written, `filter_reason()` drops:
   blocklist (MarketBeat network, Zacks, Motley Fool, Benzinga, etc.) plus a
   securities-language title regex (`shares of`, `NASDAQ:`, `price target`,
   `Q3 earnings`, ...) as a backstop for non-blocklisted domains.
-- **Obituaries.**
-- **Off-topic "forest"/"timber" homonyms** — Nottingham Forest FC, recipes,
-  gardening, tourism, "forest bathing" wellness content, etc.
+- **Obituaries** — checked against title **and** description (a local-paper
+  obituary's headline is often just a name, e.g. "Clarence R. McCool Sr.";
+  the giveaway language is in the body).
+- **Off-topic "forest"/"timber"/"logging" homonyms** — Nottingham Forest FC,
+  recipes, gardening, tourism, "forest bathing" wellness content, sports
+  idioms ("logging a sack"), tech/privacy stories ("logging audio", "data
+  logging"), etc. "logging" is a generic English word for "recording" far
+  more often than it means the timber industry, so it's treated like
+  "forest"/"timber" - see "Tuning noisy keywords" below.
 - **Anything with no genuine forestry/wood-industry term** anywhere in
   title+description (`require_industry_anchor`) — the broadest rule; catches
   whatever the others miss.
+
+**A keyword that's also a literal token inside `INDUSTRY_ANCHOR_RE` gets a
+free pass through the anchor check** - the word that matched the search is
+often the exact word the anchor rule is looking for, so it can't provide any
+real protection against that keyword's own false positives (this is how the
+"logging" homonyms above got through in the first place: `logging` is both
+a searched keyword and an anchor term). Known overlap includes at least
+`timber`, `sawmill`, `biomass`, `bioenergy`, `pulp`, `forestry`, `plywood`.
+Worth checking any new single-word keyword against `INDUSTRY_ANCHOR_RE`
+before relying on the anchor filter to catch its false positives - the fix
+for a genuinely ambiguous one is usually to drop the bare form in favor of a
+more specific phrase (as done for "logging") or add targeted `OFFTOPIC_RE`
+patterns, not to expect the anchor rule to save it.
 
 Rejected articles never touch the CSV. A per-keyword `filtered` count and an
 end-of-run reason breakdown print to the log (`blocked_source` is its own
@@ -178,22 +197,31 @@ python3 retrofilter.py output/newsdata_2026-09-07_to_2026-09-13.csv   # just one
 ```
 
 **Re-running the filter against an already-truncated description is handled
-carefully.** `filter_reason()` takes a `description_is_complete` flag;
-`retrofilter.py` sets it `False` for any row whose description already ends
-in the truncation ellipsis. This matters because re-checking the two
-description-dependent rules (off-topic homonyms, industry anchor) against
-truncated text is unsafe in *both* directions — the anchor term that
-justified keeping an article can end up in the truncated-away tail (wrongly
-rejecting it on a second pass), or a disqualifying off-topic term can end up
-truncated away (wrongly letting a bad one through). This was caught by
-running `retrofilter.py` twice in a row on the same file and comparing
-results — the second run rejected 2 articles the first run had correctly
-kept, purely because their own earlier truncation had cut off the text the
-anchor check depended on. Source- and title-only rules (blocklist, investor
-publishers, securities language, obituaries) are unaffected either way and
-always run regardless of this flag. `fetch_news.py`'s own live run never
-hits this — it always filters the fresh, full-length API response before
-any truncation happens.
+carefully, but only where it actually needs to be.** `filter_reason()` takes
+a `description_is_complete` flag; `retrofilter.py` sets it `False` for any
+row whose description already ends in the truncation ellipsis. This flag
+gates **only** the industry-anchor check — a "must find a qualifying term,
+else reject" rule, where missing text should be treated leniently, since the
+term that justified keeping the article could be sitting in the
+truncated-away tail. Re-checking it against truncated text risks wrongly
+rejecting a good article on a second pass; this was caught by running
+`retrofilter.py` twice in a row on the same file and seeing 2 previously-kept
+articles wrongly rejected the second time, purely because their own earlier
+truncation had cut off the text the anchor check depended on.
+
+Obituary and off-topic checks are the opposite shape — "reject if this
+disqualifying text is found" — and **always** check the description exactly
+as stored, truncated or not, regardless of this flag: a genuine match in
+text that's actually present is always a true positive, whatever got
+trimmed elsewhere. The only risk there is a false negative (disqualifying
+evidence that got truncated away, so a bad article isn't caught) - much more
+tolerable than wrongly discarding good content, and no different in kind
+from the gap that exists for *any* rule added after a row was already
+written. Source- and title-only rules (blocklist, investor publishers,
+securities language) are unaffected by description truncation either way and
+always run. `fetch_news.py`'s own live run never hits any of this — it
+always filters the fresh, full-length API response before any truncation
+happens.
 
 ## Configuration — `config.toml`
 
@@ -270,8 +298,20 @@ strong relevance signal.
 If a keyword is still pulling irrelevant results after phrase-quoting:
 1. Try prefixing it `title:` in `keywords.txt` (requires the term in the
    headline — see the file's own comments for examples already applied).
-2. If it's still noisy, it's likely too generic for this API's matching
-   (e.g. single dictionary words like "biomass" or "timber" overlap with
-   finance/stock-comparison boilerplate that happens to mention the word).
-   Consider a more specific phrase, or plan to filter it further downstream
-   in your AI analysis step instead of at collection time.
+   Note this doesn't help when the word itself is ambiguous even in a
+   headline (see step 3).
+2. Check whether the keyword is also a literal token inside
+   `INDUSTRY_ANCHOR_RE` (see the Content filter section above) — if so, the
+   anchor filter provides no real protection against that keyword's own
+   false positives, since the matched word satisfies its own anchor check.
+3. If the word is generic enough to mean something else entirely in common
+   English (e.g. "logging" as in "logging into an account" or "logging a
+   stat" - removed as a bare keyword for exactly this reason, keeping only
+   `logging industry`/`logging truck`), drop the bare form and keep only
+   more specific phrases. Add targeted patterns to `OFFTOPIC_RE` as a
+   backstop for the cases a specific phrase still lets through.
+4. Otherwise it's likely just too generic for this API's matching (e.g.
+   single dictionary words that overlap with finance/stock-comparison
+   boilerplate happening to mention the word). Consider a more specific
+   phrase, or plan to filter it further downstream in your AI analysis step
+   instead of at collection time.

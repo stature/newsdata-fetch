@@ -434,7 +434,7 @@ OBITUARY_TITLE_RE = re.compile(r"""(
     tribute\ to | \bfuneral\b | celebration\ of\ life | laid\ to\ rest |
     \ba\ life\ in\b | legacy\ of | \b(19|20)\d{2}\s*[-–]\s*(19|20)\d{2}\b |
     \bwas\ \d{2}\b
-)""", re.I | re.X)
+)""", re.I | re.X)  # checked against title+description blob - see filter_reason()
 
 # Homonym / off-topic noise - the words that make "forest" and "timber"
 # unusable as bare keywords against a general news index.
@@ -447,7 +447,10 @@ OFFTOPIC_RE = re.compile(r"""(
     \bmushroom\ tourism\b | \bfestival\b | chainsaw\ carv | wood\ carv |
     \b5k\b | obstacle\ course | \bmarathon\b |
     musical\ memoir | \bhonky\ tonk | \bmemories\b |
-    black\ forest | forest\ bathing | \bticks?\ to\ your\b
+    black\ forest | forest\ bathing | \bticks?\ to\ your\b |
+    logging\ (audio|in|on|out|activity|history|software|app|feature) |
+    data\ logg(er|ing) | key\ ?logg(er|ing) | \bsmart\ tv\b | network\ log |
+    log(ging)?\ a\ (sack|tackle|catch|goal|assist|touchdown|point|rebound|hit|save|win|loss)
 )""", re.I | re.X)
 
 # Category anchor: a surviving article must contain at least one genuine
@@ -477,20 +480,31 @@ def filter_reason(art: dict, cfg: dict, description_is_complete: bool = True):
     only fires for direct (non-aggregator) links - text-based rules are the
     backstop for investor content laundered through Google News/NewsBreak.
 
-    description_is_complete=False skips the two rules that inspect
-    description (offtopic homonyms, industry anchor) - used by retrofilter.py
-    for rows whose description was already truncated by an earlier run.
-    Re-checking those specific rules against truncated text is unsafe in
-    both directions: the anchor term justifying a keep can end up in the
-    truncated-away tail (wrongly rejecting a good article), or a
-    disqualifying offtopic term can end up truncated away (wrongly letting a
-    bad one through). Source- and title-only rules are unaffected by
-    description truncation either way and always run."""
+    description_is_complete=False skips only the industry-anchor check - used
+    by retrofilter.py for rows whose description was already truncated by an
+    earlier run. That check is a "must find a qualifying term, else reject"
+    rule, where missing text should be treated leniently - the anchor term
+    that justified keeping the article could be sitting in the
+    truncated-away tail, so re-checking against truncated text risks wrongly
+    rejecting a good article.
+
+    Obituary/offtopic are the opposite shape - "reject if this disqualifying
+    text is found" - and always check the description exactly as stored,
+    truncated or not, regardless of this flag: a genuine match in text that's
+    actually present is always a true positive, whatever got trimmed
+    elsewhere. The only risk there is a false NEGATIVE (evidence that got
+    truncated away, so a bad article isn't caught) - the same kind of gap
+    that already exists for any rule added after a row was written, and far
+    more tolerable than wrongly discarding good content.
+
+    Source- and title-only rules (blocklist, investor publishers/domains,
+    securities language) are unaffected by description truncation either
+    way and always run."""
     if not cfg.get("content_filter_enabled", True):
         return None
 
     title = art.get("title", "") or ""
-    description = (art.get("description", "") or "") if description_is_complete else ""
+    description = art.get("description", "") or ""
     blob = f"{title} || {description}"
     source_id = (art.get("source_id") or "").strip().lower()
     source_name = (art.get("source_name") or "").strip().lower()
@@ -504,7 +518,7 @@ def filter_reason(art: dict, cfg: dict, description_is_complete: bool = True):
         return "financial_reporting"
     if SECURITIES_TITLE_RE.search(title):
         return "financial_reporting"
-    if OBITUARY_TITLE_RE.search(title):
+    if OBITUARY_TITLE_RE.search(blob):
         return "obituary"
     if OFFTOPIC_RE.search(blob):
         return "offtopic"
