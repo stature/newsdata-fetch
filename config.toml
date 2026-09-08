@@ -44,6 +44,13 @@ resolve_bundle_app_links = true
 content_filter_enabled  = true
 require_industry_anchor = true   # the broadest/strongest rule; set false to loosen if it's over-filtering
 
+# Explicit source blocklist - add any NewsData source_id, source_name (as it
+# appears in the CSV), or bare domain here to drop everything from it,
+# regardless of what else it might match. Matched case-insensitively. This is
+# the list to edit yourself for "I never want to see source X again" - no
+# code changes needed.
+blocked_sources = ["prsync", "pr sync", "prsync.com"]
+
 # Truncate the description column to at most this many characters (ellipsis
 # included), breaking on a word boundary where possible. Applied last, after
 # filtering/dedup - the content filter still sees the full untruncated text.

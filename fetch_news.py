@@ -423,9 +423,14 @@ def filter_reason(art: dict, cfg: dict):
     title = art.get("title", "") or ""
     description = art.get("description", "") or ""
     blob = f"{title} || {description}"
-    source = (art.get("source_name") or art.get("source_id") or "").strip().lower()
+    source_id = (art.get("source_id") or "").strip().lower()
+    source_name = (art.get("source_name") or "").strip().lower()
+    source = source_name or source_id
     domain = _hostname(art.get("link", ""))
 
+    blocked = {s.strip().lower() for s in cfg.get("blocked_sources", []) if s.strip()}
+    if blocked and (source_id in blocked or source_name in blocked or domain in blocked):
+        return "blocked_source"
     if source in INVESTOR_PUBLISHERS or domain in INVESTOR_DOMAINS:
         return "financial_reporting"
     if SECURITIES_TITLE_RE.search(title):
