@@ -63,7 +63,10 @@ output_dir    = "output"
 
 # Behaviour
 results_per_keyword = 10   # NewsData free tier returns 10 per request; do not raise on free
-throttle_seconds    = 32   # >= 30s keeps you under the free tier's 30 requests / 15 min limit
+throttle_seconds    = 40   # free tier is 30 req/15min; 32s left ~zero margin (900s/32s = 28.1) and a
+                            # real run at 87 keywords hit 30x 429s and lost 6 keywords entirely once
+                            # retries started compounding within the same rolling window - 40s gives
+                            # real headroom (900s/40s = 22.5) even with retries eating into the budget
 prune_weeks         = 12   # delete weekly CSVs whose week ENDED more than this many weeks ago
 
 # HTTP / retry (mostly for 429 rate-limit responses)
