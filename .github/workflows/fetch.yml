@@ -44,12 +44,38 @@ jobs:
 
       - name: Commit and push updated output
         run: |
+          set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add output/*.csv output/.resolved_link_cache.json
           if git diff --cached --quiet; then
             echo "No changes to commit."
-          else
-            git commit -m "Daily fetch: $(date -u +'%Y-%m-%d %H:%M UTC')"
-            git push
+            exit 0
           fi
+          git commit -m "Daily fetch: $(date -u +'%Y-%m-%d %H:%M UTC')"
+
+          # A human push to main (workflow/config/keyword changes) while this
+          # job was running - a ~45-70 min collection window - can land in
+          # between our checkout and this push, making a plain `git push`
+          # rejected as non-fast-forward. Rebase onto the latest main and
+          # retry rather than lose a whole day's collected data. Safe here:
+          # this job only ever touches output/*.csv and the link cache, so a
+          # rebase over unrelated file changes applies cleanly; the rare case
+          # of a genuine conflict (something else touched the same output
+          # file) aborts cleanly and fails loud rather than force-pushing.
+          for attempt in 1 2 3 4 5; do
+            if git push; then
+              echo "Pushed on attempt $attempt."
+              exit 0
+            fi
+            echo "Push rejected (attempt $attempt/5) - fetching and rebasing onto latest main..."
+            git fetch origin main
+            if ! git rebase origin/main; then
+              echo "::error::Rebase conflict against origin/main - aborting rather than force-pushing."
+              git rebase --abort
+              exit 1
+            fi
+            sleep $((attempt * 5))
+          done
+          echo "::error::Failed to push after 5 attempts."
+          exit 1
