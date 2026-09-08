@@ -110,6 +110,35 @@ instead of the real second-level name) - fine for the `.com`/`.ca`/`.org`-style
 domains seen so far; worth revisiting with a proper TLD list if `.co.uk`-style
 sources start showing up in practice.
 
+## Content filter
+
+Before a row is ever written, `filter_reason()` drops:
+
+- **Investor/stock-comparison syndication** — an explicit publisher/domain
+  blocklist (MarketBeat network, Zacks, Motley Fool, Benzinga, etc.) plus a
+  securities-language title regex (`shares of`, `NASDAQ:`, `price target`,
+  `Q3 earnings`, ...) as a backstop for non-blocklisted domains.
+- **Obituaries.**
+- **Off-topic "forest"/"timber" homonyms** — Nottingham Forest FC, recipes,
+  gardening, tourism, "forest bathing" wellness content, etc.
+- **Anything with no genuine forestry/wood-industry term** anywhere in
+  title+description (`require_industry_anchor`) — the broadest rule; catches
+  whatever the other three miss.
+
+Rejected articles never touch the CSV. A per-keyword `filtered` count and an
+end-of-run reason breakdown print to the log. Toggle the whole thing off with
+`content_filter_enabled = false`, or just the broad anchor rule with
+`require_industry_anchor = false`, in `config.toml`.
+
+**`retrofilter.py`** re-applies the current filter to already-collected
+weekly CSVs — useful after tuning a rule, since `fetch_news.py` only filters
+going forward. Backs up each file it changes to `output/backups/` first.
+
+```bash
+python3 retrofilter.py                 # all weekly CSVs in output/
+python3 retrofilter.py output/newsdata_2026-09-07_to_2026-09-13.csv   # just one
+```
+
 ## Configuration — `config.toml`
 
 | Key | Default | Notes |
@@ -125,24 +154,43 @@ sources start showing up in practice.
 | `prune_weeks` | `12` | weekly CSVs older than this are deleted |
 | `request_timeout` / `max_retries` / `retry_backoff` | `30` / `5` / `5` | mostly for 429 handling |
 
-## Scheduling (later)
+## Scheduling — GitHub Actions
 
-Nothing here is scheduled yet — run it by hand until the process is proven.
-Once it is, options:
+Deployed at `.github/workflows/fetch.yml` on the public repo
+[`stature/newsdata-fetch`](https://github.com/stature/newsdata-fetch). No
+server, no always-on machine required — this is the sole runner (the earlier
+local macOS `launchd` agent was retired to avoid two independent processes
+maintaining diverging dedup state / CSVs).
 
-- **macOS `launchd`** — a `StartCalendarInterval` agent. Only fires when the Mac
-  is awake, so fine for a workstation that's on during the day, not for
-  guaranteed overnight runs.
-- **cron on a server** — the Oracle VM once it exists, or any always-on box:
-  `0 6 * * * cd /path/to/newsdata-fetch && .venv/bin/python fetch_news.py >> run.log 2>&1`
-- **GitHub Actions** — a scheduled workflow that runs the script and commits the
-  weekly CSV back to the repo (un-ignore `output/` first). Serverless; note
-  scheduled Actions can start a few minutes late and pause after 60 days of repo
-  inactivity.
+- **Trigger:** `schedule: cron: "0 16 * * *"` (16:00 UTC = noon EDT) plus
+  `workflow_dispatch` for on-demand manual runs from the Actions tab or
+  `gh workflow run fetch.yml`. GitHub Actions cron is always UTC and doesn't
+  follow DST, so this drifts to ~11:00 AM EST roughly early Nov–mid March
+  (about a 1-hour shift, twice a year) — edit the cron hour in the offseason
+  if that matters; not automated, to keep this simple.
+- **Secret:** `NEWSDATA_API_KEY`, stored as a GitHub Actions repo secret
+  (Settings → Secrets and variables → Actions), injected as an env var for
+  the run step. Never appears in logs or in the repo.
+- **Output:** the job runs `fetch_news.py` exactly as locally, then commits
+  any changed `output/*.csv` and `output/.resolved_link_cache.json` back to
+  `main` as `github-actions[bot]`, and pushes. That commit is also what keeps
+  GitHub from auto-disabling the schedule after 60 days of repo inactivity.
+- **Public repo** was chosen so Actions minutes are unlimited/free (a private
+  repo's free-tier 2,000 min/month would be a tight fit against a ~45-70 min
+  daily run). Content is just headlines/links/keywords — no secrets, since
+  those live in Secrets regardless of repo visibility.
+- **Concurrency:** `group: newsdata-fetch, cancel-in-progress: false` — a
+  manual trigger queues rather than colliding with a scheduled run in
+  progress.
 
-CORS does **not** affect any of these — CORS is a browser-only mechanism, and
-this is a server-side script. NewsData's "CORS enabled for localhost only" on the
-free tier only blocks calling their API from front-end browser JavaScript.
+Validated locally with `actionlint .github/workflows/fetch.yml` before every
+push that touches the workflow — same "validate before you risk it" habit as
+the Caddy config work.
+
+CORS does **not** affect any of this — CORS is a browser-only mechanism, and
+this is a server-side script running on a GitHub-hosted runner. NewsData's
+"CORS enabled for localhost only" on the free tier only blocks calling their
+API from front-end browser JavaScript.
 
 ## Free-tier limits this job respects
 
