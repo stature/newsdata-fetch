@@ -1,0 +1,95 @@
+# One keyword or phrase per line. Blank lines and lines starting with # are ignored.
+# Free tier: each line must be <= 100 characters (plain terms/phrases; no AND/OR/NOT on free).
+#
+# Multi-word lines are automatically sent as an exact phrase (quoted) - you do
+# NOT need to add quote characters yourself.
+#
+# Prefix a line with "title:" to require the term appear in the article's
+# HEADLINE instead of anywhere in the article (qInTitle instead of q). Much
+# higher precision for short/generic terms that otherwise match unrelated
+# stock-comparison and press-release noise - used below on the worst offenders
+# found in initial testing. Try it on more if you keep seeing noise from a
+# given keyword.
+
+#Forestproud
+advanced biofuel
+Advancing Mass Timber
+Arnie Didier
+title:biochar
+title:bioenergy
+title:biofuel
+biomass energy
+title:biomass
+carbon drawdown
+collaborative forest landscape restoration
+craig rawlings
+cross laminated timber
+cross-laminated timber
+title:forest health
+forest landowner
+forest management
+forest products
+title:forest
+forestry consultant
+title:forestry
+glulaminated timber
+Idaho Forest Group
+International Beams
+Lakeland Mills
+laminated veneer lumber
+Ligna
+log export
+log home industry
+logger sports
+title:loggers
+logging industry
+logging truck
+title:logging
+lumber market
+mass plywood
+mass timber conference
+mass timber group
+mass timber modular
+mass timber warehouse
+title:mass timber
+Mass Timber+
+mill closure
+modular construction
+modular industrialized construction
+modular mass timber
+montana timber
+nail laminated timber
+nanocellulose
+pellet fuel
+pellet fuels institute
+pellet mill
+plyscraper
+pulp and paper
+pulp chips
+pulpwood
+title:sawmill
+SmartLam
+softwood lumber agreement
+softwood lumber checkoff
+tall wood
+timber buyer
+timber industry
+timber prices
+timber procurement
+timber sale
+title:timber
+U.S. Forest Service
+US Endowment for Forestry and Communities
+volumetric modular construction
+West Fraser Timber
+wildland urban interface
+women in timber
+wood chips
+wood fiber insulation
+wood fiber
+wood modular construction
+wood pellet
+wood utilization
+wood waste
+WoodWorks
+woody biomass

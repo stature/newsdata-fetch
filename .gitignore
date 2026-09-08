@@ -1,0 +1,21 @@
+.env
+.venv/
+venv/
+__pycache__/
+*.pyc
+
+# launchd (local-only scheduling, superseded by GitHub Actions)
+logs/
+com.andrewadam.newsdata-fetch.plist
+run_fetch.sh
+
+# GitHub Actions is now the "CI commits the CSV" model - track the weekly
+# CSVs and the link-resolution cache, ignore everything else under output/
+# (backups, stray files).
+output/*
+!output/*.csv
+!output/.resolved_link_cache.json
+
+# Manual one-off test file, not produced by fetch_news.py (which only ever
+# writes exact Monday-Sunday spans) - kept on disk locally, never tracked.
+output/newsdata_2026-08-31_to_2026-09-13.csv

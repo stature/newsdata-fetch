@@ -1,0 +1,54 @@
+# Global filters - applied to EVERY keyword query
+language = "en"        # ISO code; "" = no language filter
+country  = "us,ca"     # comma-separated ISO country codes; "" = no country filter
+category = ""          # "" = no category filter (Forestry keywords span many categories)
+
+# Relevance / freshness
+# Confirmed to exist in NewsData's API; not confirmed as free-tier-enabled.
+# If the API rejects either, the script disables it after the first failure
+# and keeps running rather than silently dropping every keyword.
+sort           = "relevancy"  # "" = default (newest-first); NewsData's other option is "" for date
+timeframe_hours = 24          # only articles from the last N hours (1-48); "" / 0 = no timeframe filter
+
+# Optional source-quality filter - "" = no filter. Values: "top", "medium", "low".
+# Not confirmed as free-tier-enabled; worth an experiment against the press-release
+# / syndication-mill noise (prsync, zolmax, thelincolnianonline, etc.).
+priority_domain = ""
+
+# Some sources give a link to their own page rather than the real publisher
+# URL. Both are resolved automatically; either can be turned off independently
+# if it ever proves unreliable - the original link is always the fallback.
+#
+# Google News: opaque redirect token (news.google.com/rss/...). Resolved via
+# an unofficial, reverse-engineered Google endpoint (the `googlenewsdecoder`
+# package).
+resolve_google_news_links   = true
+google_news_decode_interval = 1   # seconds between decode calls (separate from throttle_seconds)
+
+# NewsBreak: a real, working preview page (newsbreak.com/...) that embeds the
+# real source URL inline - resolved with a plain page fetch + regex, no extra
+# dependency.
+resolve_newsbreak_links = true
+
+# Deterministic content filter - drops investor/stock-comparison syndication,
+# obituaries, off-topic "forest"/"timber" homonyms (sports, recipes, tourism,
+# etc.), and (via require_industry_anchor) anything with no genuine forestry/
+# wood-industry term anywhere in title+description. Applied before a row is
+# ever written - rejected articles never appear in the CSV. See
+# fetch_news.py's filter_reason() for the exact rules.
+content_filter_enabled  = true
+require_industry_anchor = true   # the broadest/strongest rule; set false to loosen if it's over-filtering
+
+# Files
+keywords_file = "keywords.txt"
+output_dir    = "output"
+
+# Behaviour
+results_per_keyword = 10   # NewsData free tier returns 10 per request; do not raise on free
+throttle_seconds    = 32   # >= 30s keeps you under the free tier's 30 requests / 15 min limit
+prune_weeks         = 12   # delete weekly CSVs whose week ENDED more than this many weeks ago
+
+# HTTP / retry (mostly for 429 rate-limit responses)
+request_timeout = 30
+max_retries     = 5
+retry_backoff   = 5        # seconds; doubles each retry -> 5, 10, 20, 40, 80
