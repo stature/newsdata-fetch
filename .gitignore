@@ -15,7 +15,3 @@ run_fetch.sh
 output/*
 !output/*.csv
 !output/.resolved_link_cache.json
-
-# Manual one-off test file, not produced by fetch_news.py (which only ever
-# writes exact Monday-Sunday spans) - kept on disk locally, never tracked.
-output/newsdata_2026-08-31_to_2026-09-13.csv
