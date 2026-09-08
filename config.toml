@@ -30,6 +30,11 @@ google_news_decode_interval = 1   # seconds between decode calls (separate from 
 # dependency.
 resolve_newsbreak_links = true
 
+# Bundle (bundle_app source_id): a curation app - each article page embeds
+# the real source next to a "shorter_link" field - same plain fetch + regex
+# approach, no extra dependency.
+resolve_bundle_app_links = true
+
 # Deterministic content filter - drops investor/stock-comparison syndication,
 # obituaries, off-topic "forest"/"timber" homonyms (sports, recipes, tourism,
 # etc.), and (via require_industry_anchor) anything with no genuine forestry/

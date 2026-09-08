@@ -35,6 +35,11 @@ BASE_URL = "https://newsdata.io/api/1/latest"  # legacy alias: /api/1/news
 GOOGLE_NEWS_HOST = "news.google.com"
 NEWSBREAK_HOST = "newsbreak.com"
 NEWSBREAK_ORIGINAL_URL_RE = re.compile(r'"originalUrl"\s*:\s*"([^"]+)"')
+BUNDLE_APP_HOST = "bundle.app"
+# Bundle embeds the true source right next to a "shorter_link" (bare domain)
+# field in an inline JSON blob - anchoring on that pair avoids matching some
+# unrelated "link" key elsewhere on the page.
+BUNDLE_APP_LINK_RE = re.compile(r'"shorter_link"\s*:\s*"[^"]*"\s*,\s*"link"\s*:\s*"([^"]+)"')
 LINK_CACHE_FILENAME = ".resolved_link_cache.json"
 SCRIPT_DIR = pathlib.Path(__file__).resolve().parent
 
@@ -141,6 +146,10 @@ def is_newsbreak_link(link: str) -> bool:
     return NEWSBREAK_HOST in (link or "")
 
 
+def is_bundle_app_link(link: str) -> bool:
+    return BUNDLE_APP_HOST in (link or "")
+
+
 def load_link_cache(path: pathlib.Path) -> dict:
     if not path.exists():
         return {}
@@ -186,6 +195,17 @@ def resolve_google_news_link(link: str, cfg: dict, cache: dict, stats: dict) -> 
     return link
 
 
+def _json_string_unescape(raw: str) -> str:
+    """Decode standard JSON string escapes (\\uXXXX, \\/, \\", etc.) from a
+    regex-captured JSON string body - e.g. a URL's "&" surviving as the
+    literal 6 characters "\\u0026" if only \\/ were unescaped. Falls back to
+    a minimal manual unescape if the capture isn't valid JSON on its own."""
+    try:
+        return json.loads(f'"{raw}"')
+    except (json.JSONDecodeError, ValueError):
+        return raw.replace("\\/", "/")
+
+
 def resolve_newsbreak_link(link: str, cfg: dict, session, cache: dict, stats: dict) -> str:
     """NewsBreak's page (unlike Google News) isn't a redirect - it's a working
     preview page that embeds the real source URL as "originalUrl" in an
@@ -207,7 +227,44 @@ def resolve_newsbreak_link(link: str, cfg: dict, session, cache: dict, stats: di
         return link
 
     if match:
-        original = match.group(1).replace("\\/", "/")
+        original = _json_string_unescape(match.group(1))
+        cache[link] = original
+        stats["resolved"] += 1
+        return original
+
+    stats["failed"] += 1
+    cache[link] = None
+    return link
+
+
+def resolve_bundle_app_link(link: str, cfg: dict, session, cache: dict, stats: dict) -> str:
+    """Bundle (bundle_app) is a curation app - each article is a working page
+    that embeds the true source next to a "shorter_link" field in an inline
+    JSON blob (also shown to readers as a "Read More: {link}" anchor). Same
+    approach as NewsBreak: one GET + a regex, no decoding library needed.
+    Best-effort: any failure just keeps the Bundle link, which still works as
+    a landing page, so it's a safe fallback."""
+    if link in cache:
+        stats["cache_hit"] += 1
+        return cache[link] or link
+
+    try:
+        resp = session.get(link, timeout=cfg.get("request_timeout", 30))
+        resp.raise_for_status()
+        # Bundle's Next.js page sometimes renders this JSON blob with its
+        # quotes backslash-escaped (nested one level deeper in the RSC
+        # stream) and sometimes not, inconsistently between requests for the
+        # same article. Normalize before matching so either form works.
+        text = resp.text.replace('\\"', '"')
+        match = BUNDLE_APP_LINK_RE.search(text)
+    except Exception as e:
+        stats["errors"] += 1
+        cache[link] = None
+        print(f"    Bundle link resolve error, keeping Bundle link: {e}")
+        return link
+
+    if match:
+        original = _json_string_unescape(match.group(1))
         cache[link] = original
         stats["resolved"] += 1
         return original
@@ -254,6 +311,10 @@ def resolve_link(link: str, cfg: dict, session, cache: dict, stats: dict) -> str
         if not cfg.get("resolve_newsbreak_links", True):
             return link
         return resolve_newsbreak_link(link, cfg, session, cache, stats)
+    if is_bundle_app_link(link):
+        if not cfg.get("resolve_bundle_app_links", True):
+            return link
+        return resolve_bundle_app_link(link, cfg, session, cache, stats)
     return link
 
 

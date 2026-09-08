@@ -79,12 +79,12 @@ With 80 keywords and the default 32-second throttle the run takes ~42 minutes
 Progress prints per keyword. Safe to run more than once a day — dedup means
 re-runs only add genuinely new articles.
 
-## Aggregator link resolution (Google News, NewsBreak)
+## Aggregator link resolution (Google News, NewsBreak, Bundle)
 
 Some sources give a link to their own aggregator page instead of the real
-publisher URL. Both are resolved automatically, through one shared, small
-mechanism (`resolve_link()` dispatches by host; add a new one by pairing an
-`is_x_link()` + `resolve_x_link()`, no other plumbing needed):
+publisher URL. All three are resolved automatically, through one shared,
+small mechanism (`resolve_link()` dispatches by host; add a new one by
+pairing an `is_x_link()` + `resolve_x_link()`, no other plumbing needed):
 
 - **Google News** (`news.google.com/rss/articles/...`) is an opaque, signed
   redirect token, not a working page. Resolved via the `googlenewsdecoder`
@@ -94,28 +94,44 @@ mechanism (`resolve_link()` dispatches by host; add a new one by pairing an
   that embeds the true source URL inline as `"originalUrl":"..."` in the
   page's own JSON. Resolved with a plain page fetch + regex — no extra
   dependency.
+- **Bundle** (`bundle.app/...`, `source_id` = `bundle_app`) is a curation app
+  — each article page embeds the real source next to a `"shorter_link"`
+  field in an inline JSON blob (shown to readers as a "Read More: {link}"
+  anchor). Same plain fetch + regex approach, no extra dependency. Its page
+  inconsistently renders that JSON with backslash-escaped quotes depending on
+  where it lands in Next.js's streamed response, so the resolver normalizes
+  that before matching — confirmed necessary by testing the same URL several
+  times in a row and seeing both forms.
 
-Both share one on-disk cache (`output/.resolved_link_cache.json`, so a link is
-never re-resolved once seen) and only run on articles that survive dedup
-(keeps aggregator request volume to a minimum). Any failure — package
+All three route their captured value through `_json_string_unescape()` rather
+than a plain string replace — a regex-captured JSON string can contain
+`\uXXXX` escapes (e.g. `&` for `&` in a tracking-parameter URL), and only
+unescaping `\/` left those literal 6-character sequences in the URL, silently
+producing a broken link. `_json_string_unescape()` wraps the capture in
+quotes and lets Python's own JSON decoder handle every standard escape.
+
+All three share one on-disk cache (`output/.resolved_link_cache.json`, so a
+link is never re-resolved once seen) and only run on articles that survive
+dedup (keeps aggregator request volume to a minimum). Any failure — package
 missing, network error, page structure changed — just leaves the original
 aggregator link in place; it still works as a landing page, so nothing
 breaks. A one-line summary (`resolved / cache_hit / failed / errors`) prints
-at the end of each run. Since both ride on undocumented mechanics, expect
-occasional breakage if Google or NewsBreak change something (a
+at the end of each run. Since all three ride on undocumented mechanics,
+expect occasional breakage if a site changes something (a
 `pip install --upgrade googlenewsdecoder` covers the Google News side).
-Disable either independently with `resolve_google_news_links = false` /
-`resolve_newsbreak_links = false` in `config.toml`.
+Disable any independently with `resolve_google_news_links = false` /
+`resolve_newsbreak_links = false` / `resolve_bundle_app_links = false` in
+`config.toml`.
 
 **When a link is resolved, `source_name` is updated to the real outlet**
 (derived from the resolved URL's domain, e.g. `scienceblog.com` -> `Scienceblog`);
-`source_id` is deliberately left as `newsbreak` / `google_news` so you can
-still filter/track articles by their original aggregator. The domain-to-name
-derivation is a simple heuristic (no public-suffix-list dependency), so it
-mishandles two-part TLDs like `.co.uk` or `.com.au` (e.g. would yield "Co"
-instead of the real second-level name) - fine for the `.com`/`.ca`/`.org`-style
-domains seen so far; worth revisiting with a proper TLD list if `.co.uk`-style
-sources start showing up in practice.
+`source_id` is deliberately left as `newsbreak` / `google_news` / `bundle_app`
+so you can still filter/track articles by their original aggregator. The
+domain-to-name derivation is a simple heuristic (no public-suffix-list
+dependency), so it mishandles two-part TLDs like `.co.uk` or `.com.au` (e.g.
+would yield "Co" instead of the real second-level name) - fine for the
+`.com`/`.ca`/`.org`-style domains seen so far; worth revisiting with a proper
+TLD list if `.co.uk`-style sources start showing up in practice.
 
 ## Content filter
 
