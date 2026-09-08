@@ -39,6 +39,12 @@ resolve_newsbreak_links = true
 content_filter_enabled  = true
 require_industry_anchor = true   # the broadest/strongest rule; set false to loosen if it's over-filtering
 
+# Truncate the description column to at most this many characters (ellipsis
+# included), breaking on a word boundary where possible. Applied last, after
+# filtering/dedup - the content filter still sees the full untruncated text.
+# 0 = no truncation.
+summary_max_chars = 300
+
 # Files
 keywords_file = "keywords.txt"
 output_dir    = "output"

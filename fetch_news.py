@@ -456,13 +456,30 @@ def fetch_keyword(session, api_key, keyword_text, mode, cfg, disabled_params) ->
     return []
 
 
-def to_row(keyword_text, art, today) -> dict:
+def truncate_text(text: str, max_chars: int) -> str:
+    """Truncate to at most max_chars total (ellipsis included), breaking on a
+    word boundary where that doesn't throw away too much of the budget."""
+    text = text or ""
+    if max_chars <= 0 or len(text) <= max_chars:
+        return text
+    ellipsis = "…"
+    budget = max_chars - len(ellipsis)
+    if budget <= 0:
+        return text[:max_chars]
+    cut = text[:budget]
+    last_space = cut.rfind(" ")
+    if last_space > budget * 0.6:
+        cut = cut[:last_space]
+    return cut.rstrip() + ellipsis
+
+
+def to_row(keyword_text, art, today, cfg) -> dict:
     return {
         "first_seen_date": today.isoformat(),
         "keyword": keyword_text,
         "pubDate": art.get("pubDate", "") or "",
         "title": art.get("title", "") or "",
-        "description": art.get("description", "") or "",
+        "description": truncate_text(art.get("description", "") or "", cfg.get("summary_max_chars", 300)),
         "source_id": art.get("source_id", "") or "",
         "source_name": art.get("source_name", "") or art.get("source_id", "") or "",
         "link": art.get("link", "") or "",
@@ -554,7 +571,7 @@ def main() -> None:
                 real_name = domain_to_source_name(resolved)
                 if real_name:
                     art["source_name"] = real_name
-            new_rows.append(to_row(kw_text, art, today))
+            new_rows.append(to_row(kw_text, art, today, cfg))
             added += 1
         print(f"    {len(articles)} returned, {added} new, {skipped_dupe} duplicate/seen, {skipped_filtered} filtered")
         if i < len(keywords):

@@ -42,6 +42,13 @@ tool then consumes the weekly CSV for Stage 2 analysis.
 `first_seen_date, keyword, pubDate, title, description, source_id, source_name,
 link, category, country, language, article_id, image_url`
 
+`description` is truncated to `summary_max_chars` (default 300, `0` disables
+it) — cut on a word boundary where possible, with an ellipsis included in the
+count so it never exceeds the limit. Applied last, after filtering/dedup, so
+the content filter always sees the full untruncated text. Only affects rows
+written going forward; existing rows in already-collected weeks are untouched
+unless you re-run them through a script that rewrites `description`.
+
 ## Setup
 
 Requires Python 3.11+ (uses the stdlib `tomllib`). `requests` is the only
