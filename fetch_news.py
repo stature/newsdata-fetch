@@ -3,11 +3,12 @@
 Stage 1 - daily Forestry news collector.
 
 For each keyword in keywords.txt, query the NewsData.io /latest endpoint,
-take the top 10 results, de-duplicate against the current week's CSV
-(one row per keyword + article, keyed by both article_id AND normalized
-title, since syndicated republishes get a fresh article_id per domain),
-append new rows, and prune weekly CSV files older than the configured
-retention window.
+take the top 10 results, and merge into the current week's CSV: one row per
+UNIQUE article (identity = article_id, falling back to normalized title for
+syndicated republishes under a different domain/id). An article matching
+multiple keywords gets one row with all matching keywords in its "keyword"
+column, rather than a separate row per keyword. Prunes weekly CSV files older
+than the configured retention window.
 
 Config lives in config.toml; the API key lives in .env (NEWSDATA_API_KEY).
 Run:  python3 fetch_news.py
@@ -96,17 +97,75 @@ def normalize_title(title: str) -> str:
     return t.strip()
 
 
-def load_existing_keys(csv_path: pathlib.Path):
-    """Returns (seen_ids, seen_titles) - both sets of (keyword, value) pairs."""
-    seen_ids, seen_titles = set(), set()
+def load_existing_rows(csv_path: pathlib.Path):
+    """Loads the current weekly CSV as one row per unique article (identity =
+    article_id, falling back to normalized title for syndicated republishes).
+    Each row's "keyword" field becomes a list internally (joined back to a
+    comma-separated string only at write time). Returns
+    (rows_in_order, by_id, by_title) - by_id/by_title map identity -> the
+    same row dict objects, for O(1) merge lookups during the run.
+
+    Legacy files written before keyword-merging existed have one keyword per
+    row and may contain the same article multiple times (once per keyword it
+    matched) - those pre-existing duplicates are loaded as separate rows
+    as-is; only NEW matches found during this run get merged into them. Run
+    retrofilter.py to collapse old duplicates retroactively."""
+    rows_in_order, by_id, by_title = [], {}, {}
     if not csv_path.exists():
-        return seen_ids, seen_titles
+        return rows_in_order, by_id, by_title
     with open(csv_path, newline="", encoding="utf-8") as f:
-        for row in csv.DictReader(f):
-            kw = row.get("keyword", "")
-            seen_ids.add((kw, row.get("article_id", "")))
-            seen_titles.add((kw, normalize_title(row.get("title", ""))))
-    return seen_ids, seen_titles
+        for raw in csv.DictReader(f):
+            row = dict(raw)
+            row["keyword"] = [k.strip() for k in row.get("keyword", "").split(",") if k.strip()]
+            rows_in_order.append(row)
+            aid = row.get("article_id", "")
+            if aid:
+                by_id.setdefault(aid, row)
+            norm = normalize_title(row.get("title", ""))
+            if norm:
+                by_title.setdefault(norm, row)
+    return rows_in_order, by_id, by_title
+
+
+def merge_duplicate_rows(rows: list) -> list:
+    """Collapses rows representing the same article (same article_id, or
+    same normalized title - syndicated republishes) into one row per
+    article, unioning their keyword lists and keeping the earliest
+    first_seen_date. `rows` have "keyword" as the comma-separated string
+    shape read from a CSV; returns rows in that same shape, first-occurrence
+    order preserved. Used by retrofilter.py to retroactively clean up
+    duplicate rows written before keyword-merging existed; fetch_news.py's
+    own run doesn't need this - it merges live via load_existing_rows()."""
+    by_id, by_title, ordered = {}, {}, []
+    for row in rows:
+        aid = row.get("article_id", "")
+        norm = normalize_title(row.get("title", ""))
+        target = by_id.get(aid) or (by_title.get(norm) if norm else None)
+        kw_list = [k.strip() for k in row.get("keyword", "").split(",") if k.strip()]
+
+        if target is None:
+            target = dict(row)
+            target["_keywords"] = list(dict.fromkeys(kw_list))
+            ordered.append(target)
+        else:
+            for kw in kw_list:
+                if kw not in target["_keywords"]:
+                    target["_keywords"].append(kw)
+            first_seen = row.get("first_seen_date", "")
+            if first_seen and (not target.get("first_seen_date") or first_seen < target["first_seen_date"]):
+                target["first_seen_date"] = first_seen
+
+        if aid:
+            by_id.setdefault(aid, target)
+        if norm:
+            by_title.setdefault(norm, target)
+
+    out = []
+    for row in ordered:
+        row = dict(row)
+        row["keyword"] = ", ".join(row.pop("_keywords"))
+        out.append(row)
+    return out
 
 
 def read_keywords(path: pathlib.Path) -> list:
@@ -412,16 +471,26 @@ INDUSTRY_ANCHOR_RE = re.compile(r"""(
 )""", re.I | re.X)
 
 
-def filter_reason(art: dict, cfg: dict):
+def filter_reason(art: dict, cfg: dict, description_is_complete: bool = True):
     """Returns a reason code string if `art` should be dropped, else None.
     Checked BEFORE aggregator link resolution, so the investor-domain check
     only fires for direct (non-aggregator) links - text-based rules are the
-    backstop for investor content laundered through Google News/NewsBreak."""
+    backstop for investor content laundered through Google News/NewsBreak.
+
+    description_is_complete=False skips the two rules that inspect
+    description (offtopic homonyms, industry anchor) - used by retrofilter.py
+    for rows whose description was already truncated by an earlier run.
+    Re-checking those specific rules against truncated text is unsafe in
+    both directions: the anchor term justifying a keep can end up in the
+    truncated-away tail (wrongly rejecting a good article), or a
+    disqualifying offtopic term can end up truncated away (wrongly letting a
+    bad one through). Source- and title-only rules are unaffected by
+    description truncation either way and always run."""
     if not cfg.get("content_filter_enabled", True):
         return None
 
     title = art.get("title", "") or ""
-    description = art.get("description", "") or ""
+    description = (art.get("description", "") or "") if description_is_complete else ""
     blob = f"{title} || {description}"
     source_id = (art.get("source_id") or "").strip().lower()
     source_name = (art.get("source_name") or "").strip().lower()
@@ -439,7 +508,7 @@ def filter_reason(art: dict, cfg: dict):
         return "obituary"
     if OFFTOPIC_RE.search(blob):
         return "offtopic"
-    if cfg.get("require_industry_anchor", True) and not INDUSTRY_ANCHOR_RE.search(blob):
+    if description_is_complete and cfg.get("require_industry_anchor", True) and not INDUSTRY_ANCHOR_RE.search(blob):
         return "no_industry_anchor"
     return None
 
@@ -579,11 +648,10 @@ def main() -> None:
     today = datetime.date.today()
     monday, sunday = week_bounds(today)
     csv_path = weekly_path(output_dir, monday, sunday)
-    is_new_file = not csv_path.exists()
-    seen_ids, seen_titles = load_existing_keys(csv_path)
+    rows_in_order, by_id, by_title = load_existing_rows(csv_path)
 
     print(f"Week {monday} .. {sunday}  ->  {csv_path.name}")
-    print(f"{len(keywords)} keywords; {len(seen_ids)} (keyword, article) pairs already recorded this week")
+    print(f"{len(keywords)} keywords; {len(rows_in_order)} unique article(s) already recorded this week")
 
     throttle = cfg.get("throttle_seconds", 32)
     per_kw = cfg.get("results_per_keyword", 10)
@@ -600,15 +668,15 @@ def main() -> None:
     session.headers.update({"User-Agent": "newsdata-fetch/1.0 (+stage1 forestry)"})
 
     filter_counts: dict = {}
-    new_rows = []
+    new_article_total = merged_total = already_seen_total = 0
     for i, (kw_text, mode) in enumerate(keywords, 1):
         label = f"title:{kw_text}" if mode == "title" else kw_text
         print(f"[{i}/{len(keywords)}] {label}")
         articles = fetch_keyword(session, api_key, kw_text, mode, cfg, disabled_params)[:per_kw]
-        added, skipped_dupe, skipped_filtered = 0, 0, 0
+        new_article, merged, already_seen, skipped_filtered = 0, 0, 0, 0
         for art in articles:
             if art.get("duplicate"):
-                skipped_dupe += 1
+                already_seen += 1
                 continue
             reason = filter_reason(art, cfg)
             if reason:
@@ -618,15 +686,21 @@ def main() -> None:
             aid = art.get("article_id") or art.get("link")
             if not aid:
                 continue
-            title_key = (kw_text, normalize_title(art.get("title", "")))
-            id_key = (kw_text, aid)
-            if id_key in seen_ids or title_key in seen_titles:
-                skipped_dupe += 1
+            norm_title = normalize_title(art.get("title", ""))
+            target = by_id.get(aid) or (by_title.get(norm_title) if norm_title else None)
+
+            if target is not None:
+                if kw_text in target["keyword"]:
+                    already_seen += 1
+                else:
+                    target["keyword"].append(kw_text)
+                    by_id.setdefault(aid, target)
+                    if norm_title:
+                        by_title.setdefault(norm_title, target)
+                    merged += 1
                 continue
-            seen_ids.add(id_key)
-            seen_titles.add(title_key)
-            # Only resolve links we're actually keeping - keeps aggregator
-            # request volume to a minimum. No-ops for any other host.
+
+            # Brand new article - only resolve/build once per unique article.
             original_link = art.get("link", "")
             resolved = resolve_link(original_link, cfg, session, link_cache, link_stats)
             if resolved != original_link:
@@ -637,9 +711,19 @@ def main() -> None:
                 real_name = domain_to_source_name(resolved)
                 if real_name:
                     art["source_name"] = real_name
-            new_rows.append(to_row(kw_text, art, today, cfg))
-            added += 1
-        print(f"    {len(articles)} returned, {added} new, {skipped_dupe} duplicate/seen, {skipped_filtered} filtered")
+            row = to_row(kw_text, art, today, cfg)
+            row["keyword"] = [kw_text]
+            rows_in_order.append(row)
+            by_id[aid] = row
+            if norm_title:
+                by_title.setdefault(norm_title, row)
+            new_article += 1
+
+        print(f"    {len(articles)} returned, {new_article} new, {merged} merged into existing, "
+              f"{already_seen} already recorded, {skipped_filtered} filtered")
+        new_article_total += new_article
+        merged_total += merged
+        already_seen_total += already_seen
         if i < len(keywords):
             time.sleep(throttle)
 
@@ -652,15 +736,20 @@ def main() -> None:
         breakdown = ", ".join(f"{reason}: {n}" for reason, n in sorted(filter_counts.items()))
         print(f"Content filter: {sum(filter_counts.values())} rejected ({breakdown})")
 
-    if new_rows:
-        with open(csv_path, "a", newline="", encoding="utf-8") as f:
+    if new_article_total or merged_total:
+        tmp_path = csv_path.with_suffix(csv_path.suffix + ".tmp")
+        with open(tmp_path, "w", newline="", encoding="utf-8") as f:
             writer = csv.DictWriter(f, fieldnames=COLUMNS)
-            if is_new_file:
-                writer.writeheader()
-            writer.writerows(new_rows)
-        print(f"Appended {len(new_rows)} new row(s) to {csv_path.name}")
+            writer.writeheader()
+            for row in rows_in_order:
+                out = dict(row)
+                out["keyword"] = ", ".join(row["keyword"])
+                writer.writerow(out)
+        os.replace(tmp_path, csv_path)  # atomic - never leaves a half-written file
+        print(f"{csv_path.name}: {new_article_total} new article(s), {merged_total} merged into "
+              f"existing articles, {already_seen_total} already recorded -> {len(rows_in_order)} total rows")
     else:
-        print("No new rows to append.")
+        print(f"No changes ({already_seen_total} already recorded, nothing new).")
 
     if disabled_params:
         print(f"Note: these params were rejected by the API and disabled for this run: {sorted(disabled_params)}")

@@ -9,6 +9,10 @@ today - without querying NewsData.io (no API credits spent):
     their real source (small requests to those sites directly, not NewsData;
     shares the same on-disk cache fetch_news.py uses)
   - truncates description to the current summary_max_chars
+  - merges duplicate rows for the same article (same article_id, or same
+    normalized title) into one row with a combined keyword column - fixes
+    rows written before keyword-merging existed, where the same article got
+    a separate row per matching keyword
 
 Backs up each file it changes to output/backups/ before overwriting (never
 clobbers an existing backup - adds a numeric suffix if today's is taken).
@@ -36,6 +40,7 @@ from fetch_news import (
     is_newsbreak_link,
     load_config,
     load_link_cache,
+    merge_duplicate_rows,
     resolve_link,
     save_link_cache,
     truncate_text,
@@ -61,16 +66,20 @@ def clean_file(path: pathlib.Path, cfg: dict, backup_dir: pathlib.Path,
     with open(path, newline="", encoding="utf-8") as f:
         rows = list(csv.DictReader(f))
 
-    updated = []
+    survivors = []
     filter_counts: dict = {}
     truncated_count = 0
-    changed = False
 
     for row in rows:
-        reason = filter_reason(row, cfg)
+        # A description ending in the ellipsis truncate_text() appends means
+        # this row was already truncated by an earlier run - re-checking the
+        # description-dependent rules against that shortened text is unsafe
+        # (see filter_reason()'s docstring), so skip just those two rules for
+        # rows already in that state. Source/title-based rules still apply.
+        already_truncated = row.get("description", "").endswith("…")
+        reason = filter_reason(row, cfg, description_is_complete=not already_truncated)
         if reason:
             filter_counts[reason] = filter_counts.get(reason, 0) + 1
-            changed = True
             continue
 
         new_row = dict(row)
@@ -88,11 +97,12 @@ def clean_file(path: pathlib.Path, cfg: dict, backup_dir: pathlib.Path,
             new_row["description"] = truncated
             truncated_count += 1
 
-        if new_row != row:
-            changed = True
-        updated.append(new_row)
+        survivors.append(new_row)
 
-    if not changed:
+    merged = merge_duplicate_rows(survivors)
+    merged_away = len(survivors) - len(merged)
+
+    if merged == rows:
         print(f"{path.name}: {len(rows)} rows, nothing to update")
         return
 
@@ -103,12 +113,13 @@ def clean_file(path: pathlib.Path, cfg: dict, backup_dir: pathlib.Path,
     with open(path, "w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=COLUMNS)
         writer.writeheader()
-        writer.writerows(updated)
+        writer.writerows(merged)
 
     removed = sum(filter_counts.values())
     breakdown = ", ".join(f"{k}: {v}" for k, v in sorted(filter_counts.items())) if filter_counts else "none"
-    print(f"{path.name}: {len(rows)} -> {len(updated)} rows "
-          f"(filtered: {breakdown}; {truncated_count} description(s) truncated)")
+    print(f"{path.name}: {len(rows)} -> {len(merged)} rows "
+          f"(filtered: {breakdown}; {truncated_count} description(s) truncated; "
+          f"{merged_away} duplicate row(s) merged into existing articles)")
     print(f"  backup: {backup}")
 
 

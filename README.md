@@ -2,8 +2,9 @@
 
 A small scheduled batch job (no MCP, no server required). For each keyword in
 `keywords.txt` it queries the NewsData.io `/latest` endpoint, takes the top 10
-results, de-duplicates, and appends new rows to the current week's CSV. Your AI
-tool then consumes the weekly CSV for Stage 2 analysis.
+results, and merges into the current week's CSV: one row per unique article,
+with every matching keyword combined into that row. Your AI tool then
+consumes the weekly CSV for Stage 2 analysis.
 
 ## What it does
 
@@ -21,19 +22,22 @@ tool then consumes the weekly CSV for Stage 2 analysis.
     default. Neither is confirmed to be free-tier-enabled — if the API rejects
     one, the script disables it for the rest of that run and logs a warning
     instead of silently failing every remaining keyword.
-- **De-duplication:** one row per `(keyword, article_id)`, **plus** a second
-  check on normalized title per keyword — this catches the same story
-  syndicated across multiple domains (common with press-release / stock-news
-  mills), which get a different `article_id` per domain but identical text.
-  Articles NewsData itself flags `duplicate: true` are also skipped. An
-  article that matches 3 *different* keywords still produces 3 rows; the same
-  article reappearing under the same keyword on a later day is **not**
-  re-added. `first_seen_date` records when we first saw it.
-- **Weekly files:** all of a week's rows go in one CSV named
+- **De-duplication:** one row per *unique article* — identity is `article_id`,
+  falling back to normalized title (catches the same story syndicated across
+  multiple domains, which get a different `article_id` per domain but
+  identical text). An article matching 3 different keywords gets **one row**
+  with `keyword` = `"kw1, kw2, kw3"`, not 3 separate rows — a keyword is added
+  to that row's list the first time it matches; matching again later is a
+  no-op. Articles NewsData itself flags `duplicate: true` are also skipped.
+  `first_seen_date` is the earliest date any keyword matched it, and never
+  changes once set.
+- **Weekly files:** all of a week's data lives in one CSV named
   `newsdata_<Monday>_to_<Sunday>.csv` (ISO dates), e.g.
   `newsdata_2026-09-01_to_2026-09-07.csv`. The first run of a new week creates
-  the next file automatically. The file is **appended to** each day — never a new
-  file per day.
+  the next file automatically. Each run rewrites the file in place (existing
+  rows may gain a merged keyword; genuinely new articles are added) — written
+  atomically via a temp file + rename, so a crash mid-write can never leave a
+  half-written CSV.
 - **Retention:** after writing, any weekly CSV whose week *ended* more than
   `prune_weeks` (default 12) weeks ago is deleted.
 
@@ -160,14 +164,36 @@ trail). Toggle the whole thing off with `content_filter_enabled = false`, or
 just the broad anchor rule with `require_industry_anchor = false`, in
 `config.toml`.
 
-**`retrofilter.py`** re-applies the current filter to already-collected
-weekly CSVs — useful after tuning a rule, since `fetch_news.py` only filters
-going forward. Backs up each file it changes to `output/backups/` first.
+**`retrofilter.py`** brings already-collected weekly CSVs up to what a fresh
+run would produce today, with no NewsData API calls: re-applies the current
+content filter (useful after tuning a rule or adding to `blocked_sources`),
+resolves any still-outstanding aggregator links, truncates descriptions, and
+merges any duplicate rows left over from before keyword-merging existed.
+Backs up each file it changes to `output/backups/` first (never clobbers an
+existing same-day backup - adds a numeric suffix).
 
 ```bash
 python3 retrofilter.py                 # all weekly CSVs in output/
 python3 retrofilter.py output/newsdata_2026-09-07_to_2026-09-13.csv   # just one
 ```
+
+**Re-running the filter against an already-truncated description is handled
+carefully.** `filter_reason()` takes a `description_is_complete` flag;
+`retrofilter.py` sets it `False` for any row whose description already ends
+in the truncation ellipsis. This matters because re-checking the two
+description-dependent rules (off-topic homonyms, industry anchor) against
+truncated text is unsafe in *both* directions — the anchor term that
+justified keeping an article can end up in the truncated-away tail (wrongly
+rejecting it on a second pass), or a disqualifying off-topic term can end up
+truncated away (wrongly letting a bad one through). This was caught by
+running `retrofilter.py` twice in a row on the same file and comparing
+results — the second run rejected 2 articles the first run had correctly
+kept, purely because their own earlier truncation had cut off the text the
+anchor check depended on. Source- and title-only rules (blocklist, investor
+publishers, securities language, obituaries) are unaffected either way and
+always run regardless of this flag. `fetch_news.py`'s own live run never
+hits this — it always filters the fresh, full-length API response before
+any truncation happens.
 
 ## Configuration — `config.toml`
 
