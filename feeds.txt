@@ -1,0 +1,13 @@
+# One RSS/Atom feed URL per line. Blank lines and lines starting with # are ignored.
+#
+# These are for niche industry media / corporate blogs that NewsData.io doesn't
+# index. Output goes to a SEPARATE weekly file (newsdata_<Mon>_to_<Sun>_RSS.csv)
+# with every row's keyword column set to "(rss)". The industry-anchor filter is
+# OFF for these by default (rss_require_industry_anchor in config.toml) - the
+# other content-filter rules still apply.
+#
+# First run of a new week backfills to that Monday; every run after only looks
+# back rss_recency_hours (default 24). De-dup runs within the _RSS file AND
+# against that week's NewsData file (anything already collected there is skipped).
+#
+# Add feed URLs below:

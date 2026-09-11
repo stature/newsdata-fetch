@@ -66,6 +66,12 @@ def clean_file(path: pathlib.Path, cfg: dict, backup_dir: pathlib.Path,
     with open(path, newline="", encoding="utf-8") as f:
         rows = list(csv.DictReader(f))
 
+    # An _RSS file was collected with the anchor rule off (or whatever
+    # rss_require_industry_anchor says); re-filtering it with the main
+    # setting would strip rows it deliberately kept.
+    if path.stem.endswith("_RSS"):
+        cfg = {**cfg, "require_industry_anchor": cfg.get("rss_require_industry_anchor", False)}
+
     survivors = []
     filter_counts: dict = {}
     truncated_count = 0

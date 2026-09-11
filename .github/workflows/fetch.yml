@@ -42,6 +42,12 @@ jobs:
           NEWSDATA_API_KEY: ${{ secrets.NEWSDATA_API_KEY }}
         run: python3 fetch_news.py
 
+      # Separate side-collector, no API key. continue-on-error so a feed
+      # problem never blocks the NewsData commit below.
+      - name: Run RSS collector
+        continue-on-error: true
+        run: python3 fetch_rss.py
+
       - name: Commit and push updated output
         run: |
           set -euo pipefail

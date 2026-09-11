@@ -73,3 +73,17 @@ prune_weeks         = 12   # delete weekly CSVs whose week ENDED more than this 
 request_timeout = 30
 max_retries     = 5
 retry_backoff   = 5        # seconds; doubles each retry -> 5, 10, 20, 40, 80
+
+# --- RSS side-collector (fetch_rss.py) -------------------------------------
+# Niche industry media / corporate blogs NewsData.io doesn't index. Writes a
+# SEPARATE weekly file: newsdata_<Mon>_to_<Sun>_RSS.csv, every row keyword =
+# "(rss)". Lower-trust output meant for downstream AI review. Remove the
+# feature by deleting fetch_rss.py + feeds.txt and this whole block.
+rss_enabled                   = true
+rss_feeds_file                = "feeds.txt"
+rss_recency_hours             = 24     # steady-state lookback; first run of a new week backfills to that Monday
+rss_max_entries_per_feed      = 40     # cap per feed per run, newest first
+rss_require_industry_anchor   = false  # OFF: RSS sources are curated but broad - let the AI tool judge relevance
+rss_cross_dedupe_with_newsdata = true  # skip entries already in that week's NewsData file
+rss_feed_timeout              = 30
+rss_feed_delay_seconds        = 2      # politeness pause between feeds

@@ -189,7 +189,9 @@ def prune(output_dir: pathlib.Path, prune_weeks: int, today: datetime.date) -> N
     cutoff = today - datetime.timedelta(weeks=prune_weeks)
     for p in sorted(output_dir.glob("newsdata_*_to_*.csv")):
         try:
-            end = datetime.date.fromisoformat(p.stem.split("_to_")[1])
+            # segment after "_to_" is "YYYY-MM-DD" optionally followed by a
+            # suffix like "_RSS" - take the leading 10 chars for the date.
+            end = datetime.date.fromisoformat(p.stem.split("_to_")[1][:10])
         except (IndexError, ValueError):
             continue
         if end < cutoff:

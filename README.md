@@ -78,10 +78,49 @@ source .venv/bin/activate
 python3 fetch_news.py
 ```
 
-With 80 keywords and the default 32-second throttle the run takes ~42 minutes
-(the throttle keeps you under the free tier's 30-requests / 15-minutes limit).
-Progress prints per keyword. Safe to run more than once a day — dedup means
-re-runs only add genuinely new articles.
+With 87 keywords and the default 40-second throttle the run takes ~58 minutes
+(the throttle keeps you under the free tier's 30-requests / 15-minutes limit —
+see the comment on `throttle_seconds` in `config.toml` for why it's 40 and
+not lower). Progress prints per keyword. Safe to run more than once a day —
+dedup means re-runs only add genuinely new articles.
+
+## RSS side-collector — `fetch_rss.py`
+
+Optional companion job for niche industry media / corporate blogs that
+NewsData.io doesn't index but publish RSS/Atom feeds. Feed URLs go in
+`feeds.txt` (same format as `keywords.txt`). Output is a **separate** weekly
+file, `newsdata_<Mon>_to_<Sun>_RSS.csv`, with **identical columns** to the
+main file — so downstream tooling works on both — and every row's `keyword`
+column set to the literal `(rss)`.
+
+It's deliberately lower-trust than the keyword-driven NewsData file: RSS
+sources are curated but broad, so the **industry-anchor filter rule is OFF**
+by default (`rss_require_industry_anchor`). The other content-filter rules
+(`blocked_sources`, investor spam, obituaries, off-topic homonyms) still
+apply. The intent is that this file gets a downstream AI relevance pass
+rather than being consumed as-is.
+
+- **De-dup:** by article identity within the `_RSS` file (same mechanism as
+  the main job), **plus** a cross-check against that week's NewsData file —
+  anything already collected there (matched on normalized title or exact
+  link) is skipped here, so you never see the same article in both.
+- **Recency:** the first run of a new week backfills to that Monday 00:00
+  UTC; every run after only looks back `rss_recency_hours` (default 24).
+- **Robustness:** each feed is fetched in its own try/except — one dead or
+  malformed feed can't take the run down. Per-feed entry cap
+  (`rss_max_entries_per_feed`), polite delay between feeds, no API key
+  needed. In CI it runs as a `continue-on-error` step so a feed problem
+  never blocks the NewsData commit.
+- **Removing it:** delete `fetch_rss.py` + `feeds.txt`, drop the `rss_*`
+  block from `config.toml`, drop `feedparser` from `requirements.txt`, drop
+  the "Run RSS collector" step from `.github/workflows/fetch.yml`.
+  `fetch_news.py` never imports from it, so the core job is untouched.
+
+```bash
+python3 fetch_rss.py
+```
+
+Only new third-party dependency is `feedparser` (pure-Python).
 
 ## Aggregator link resolution (Google News, NewsBreak, Bundle)
 
