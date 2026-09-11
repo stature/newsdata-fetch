@@ -11,3 +11,25 @@
 # against that week's NewsData file (anything already collected there is skipped).
 #
 # Add feed URLs below:
+
+https://www.thinkwood.com/feed
+https://sterlingstructural.com/feed/
+https://newenglandforestry.org/feed/
+# https://biomassmagazine.com/feed  -- 404, no discoverable alternate as of 2026-09-11
+https://www.canadianbiomassmagazine.ca/feed/
+https://forestnet.com/feed/
+https://www.nhla.com/blog-feed.xml
+https://feeds.feedburner.com/WRI_News_and_Views
+https://palletenterprise.com/feed/
+https://forisk.com/feed/
+https://www.resourcewise.com/market-watch-blog/rss.xml
+https://www.woodworks.org/feed/
+https://internationalforestindustries.com/feed
+https://www.northernlogger.com/feed/
+https://www.panelworldmag.com/feed/
+https://www.southernloggintimesmagazine.com/feed/
+https://timberharvesting.com/feed/
+https://www.timberprocessing.com/feed
+https://www.ttjonline.com/feed/
+https://woodbioenergymagazine.com/feed
+https://www.woodbusiness.ca/feed/
