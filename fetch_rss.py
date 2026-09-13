@@ -143,6 +143,20 @@ def fetch_feed(session, url: str, cfg: dict):
     return feed_title, parsed.entries
 
 
+def write_step_summary(text: str) -> None:
+    """Appends markdown to the GitHub Actions run's own summary page (visible
+    right on the run, no log-diving needed). No-op outside CI - GITHUB_STEP_
+    SUMMARY is only set there - so this is safe to call from a local run too."""
+    path = os.environ.get("GITHUB_STEP_SUMMARY")
+    if not path:
+        return
+    try:
+        with open(path, "a", encoding="utf-8") as f:
+            f.write(text)
+    except OSError as e:
+        print(f"WARNING: could not write step summary: {e}")
+
+
 def load_newsdata_identity(newsdata_csv: pathlib.Path):
     """Normalized titles + links already in this week's NewsData file, so we
     don't re-surface them in the RSS file."""
@@ -233,9 +247,12 @@ def main() -> None:
     delay = cfg.get("rss_feed_delay_seconds", 2)
     filter_counts: dict = {}
     new_total = stale_total = in_newsdata_total = already_total = 0
+    dead_feeds = []
 
     for i, feed_url in enumerate(feeds, 1):
         feed_title, entries = fetch_feed(session, feed_url, cfg)
+        if feed_title is None:
+            dead_feeds.append(feed_url)
         new_f = stale_f = in_nd_f = already_f = filtered_f = 0
         for entry in entries[:per_feed_cap]:
             dt = entry_datetime(entry)
@@ -309,15 +326,28 @@ def main() -> None:
                 out["keyword"] = ", ".join(kw) if isinstance(kw, list) else kw
                 w.writerow(out)
         os.replace(tmp, rss_csv)
-        print(f"{rss_csv.name}: {new_total} new -> {len(rows_in_order)} total rows "
-              f"({already_total} already in RSS, {in_newsdata_total} already in NewsData, "
-              f"{stale_total} outside window)")
+        result_line = (f"{rss_csv.name}: {new_total} new -> {len(rows_in_order)} total rows "
+                        f"({already_total} already in RSS, {in_newsdata_total} already in NewsData, "
+                        f"{stale_total} outside window)")
     else:
-        print(f"No new RSS rows ({already_total} already in RSS, {in_newsdata_total} already in NewsData, "
-              f"{stale_total} outside window).")
+        result_line = (f"No new RSS rows ({already_total} already in RSS, {in_newsdata_total} already in "
+                        f"NewsData, {stale_total} outside window).")
+    print(result_line)
 
     prune(output_dir, cfg.get("prune_weeks", 12), today)
     print("Done.")
+
+    summary = [f"### 📡 RSS collector — {rss_csv.name}\n\n", f"{result_line}\n\n"]
+    summary.append(f"- **{len(feeds)}** feeds checked" + (f", **{len(dead_feeds)} unreachable**" if dead_feeds else "") + "\n")
+    if dead_feeds:
+        summary.append("  - " + ", ".join(dead_feeds) + "\n")
+    if filter_counts:
+        breakdown = ", ".join(f"{r}: {n}" for r, n in sorted(filter_counts.items()))
+        summary.append(f"- content filter rejected {sum(filter_counts.values())}: {breakdown}\n")
+    if any(link_stats.values()):
+        summary.append(f"- links resolved: {link_stats['resolved']} ({link_stats['cache_hit']} from cache, "
+                        f"{link_stats['failed']} failed, {link_stats['errors']} errors)\n")
+    write_step_summary("".join(summary))
 
 
 if __name__ == "__main__":

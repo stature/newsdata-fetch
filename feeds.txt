@@ -15,7 +15,6 @@
 https://www.thinkwood.com/feed
 https://sterlingstructural.com/feed/
 https://newenglandforestry.org/feed/
-# https://biomassmagazine.com/feed  -- 404, no discoverable alternate as of 2026-09-11
 https://www.canadianbiomassmagazine.ca/feed/
 https://forestnet.com/feed/
 https://www.nhla.com/blog-feed.xml
