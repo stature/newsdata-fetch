@@ -21,7 +21,7 @@ https://www.nhla.com/blog-feed.xml
 https://feeds.feedburner.com/WRI_News_and_Views
 https://palletenterprise.com/feed/
 https://forisk.com/feed/
-https://www.resourcewise.com/market-watch-blog/rss.xml
+https://www.resourcewise.com/blog/rss.xml
 https://www.woodworks.org/feed/
 https://internationalforestindustries.com/feed
 https://www.northernlogger.com/feed/
