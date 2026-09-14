@@ -23,7 +23,7 @@ import re
 import sys
 import time
 import tomllib
-from urllib.parse import urlsplit
+from urllib.parse import parse_qs, urlsplit
 
 import requests
 
@@ -209,6 +209,36 @@ def is_newsbreak_link(link: str) -> bool:
 
 def is_bundle_app_link(link: str) -> bool:
     return BUNDLE_APP_HOST in (link or "")
+
+
+def is_google_alert_link(link: str) -> bool:
+    """Google Alerts RSS entries point at a google.com/url? redirect wrapper,
+    not the real article URL."""
+    if not link:
+        return False
+    try:
+        parts = urlsplit(link)
+    except ValueError:
+        return False
+    host = (parts.hostname or "").lower()
+    host = host[4:] if host.startswith("www.") else host
+    return host == "google.com" and parts.path == "/url"
+
+
+def resolve_google_alert_link(link: str) -> str:
+    """Unwraps a google.com/url?...&url=<actual>&ct=<token>... redirect to the
+    real article URL. Pure/local - the real URL is already in the query
+    string, no network round-trip needed - so this runs before de-dup rather
+    than after: two alerts wrapping the same article get different ct=
+    tokens, so de-dup on the raw link would treat them as different articles."""
+    try:
+        qs = parse_qs(urlsplit(link).query)
+    except ValueError:
+        return link
+    for key in ("url", "q"):
+        if qs.get(key):
+            return qs[key][0]
+    return link
 
 
 def load_link_cache(path: pathlib.Path) -> dict:

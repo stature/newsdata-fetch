@@ -48,12 +48,14 @@ from fetch_news import (
     _joinlist,
     domain_to_source_name,
     filter_reason,
+    is_google_alert_link,
     load_config,
     load_env,
     load_existing_rows,
     load_link_cache,
     normalize_title,
     prune,
+    resolve_google_alert_link,
     resolve_link,
     save_link_cache,
     truncate_text,
@@ -176,12 +178,14 @@ def load_newsdata_identity(newsdata_csv: pathlib.Path):
 
 def build_row(entry, feed_title, feed_url, today) -> dict:
     link = (entry.get("link") or "").strip()
+    if is_google_alert_link(link):
+        link = resolve_google_alert_link(link)
     domain = _hostname(link) or _hostname(feed_url)
     return {
         "first_seen_date": today.isoformat(),
         "keyword": "(rss)",
         "pubDate": entry_pubdate(entry),
-        "title": (entry.get("title") or "").strip(),
+        "title": strip_html((entry.get("title") or "").strip()),
         "description": entry_description(entry),  # truncated by caller
         "source_id": domain,
         "source_name": feed_title or domain_to_source_name(link) or domain,
