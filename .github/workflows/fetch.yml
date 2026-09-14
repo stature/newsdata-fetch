@@ -11,7 +11,12 @@ on:
     # mid March each year (~1hr, twice a year). Adjust the hour below in the
     # offseason if that matters; not automated to keep this simple.
     - cron: "5 16 * * *"
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      rss_only:
+        description: "Skip fetch_news.py (NewsData API) and run only fetch_rss.py"
+        type: boolean
+        default: false
 
 concurrency:
   group: newsdata-fetch
@@ -38,6 +43,7 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Run collector
+        if: ${{ github.event.inputs.rss_only != 'true' }}
         env:
           NEWSDATA_API_KEY: ${{ secrets.NEWSDATA_API_KEY }}
         run: python3 fetch_news.py
